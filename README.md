@@ -149,6 +149,27 @@ vectors-objects-bundle.tar.gz   insurance copy of all vectors/*/objects/
 Interface IDs (compiler-verified, solc 0.8.24):
 `ITaskToken = 0xcdaeb26d` · `ITaskTender = 0xc319d532` · `ITaskVerifier = 0x9977db15` · `IOnchainTaskDocument = 0xeb078d05`
 
+## Settlement deductions (this branch)
+
+This branch adds the escrow side of the draft
+[Settlement Deductions ERC](https://github.com/unicore-gpu/settlement-deductions) to the
+kernel, so that a deployment can withhold part of each payout for a tax, an insurance
+premium or a loan repayment. With no policy, settlement is unchanged.
+
+- `contracts/TaskToken.sol`: `_deductionPolicy()` (default: none), `onTaskCreated` at mint,
+  and `_applyDeductions` on every payout path: a fixed gas budget the caller cannot starve,
+  at most one word of return data, full payout and `DeductionsSkipped` on any invalid
+  answer, the deduction credited to the policy and withdrawn through `withdrawCredit`.
+- `contracts/interfaces/ISettlementDeductions.sol`: a copy of the ERC's interfaces.
+- `companions/DeductingTaskToken.sol`: deploys the reference policy from the
+  settlement-deductions repository and names it for life.
+- `test/DeductingTaskToken.t.sol`: 21 tests, including a contract-size check;
+  `test/DeductionConformance.t.sol`: 8 tests of the kernel against the ERC's escrow
+  requirements (every payout path asks the policy, no refund or rejection path does,
+  no gas limit settles without the deductions, the ERC's events, withdrawal by anyone).
+- Size on this branch: `TaskToken` 23,803 bytes of runtime code (37 more than the
+  figure below), `DeductingTaskToken` 24,490, both under the 24,576-byte limit.
+
 ## Quick start
 
 ```bash
@@ -169,6 +190,7 @@ python3 tools/task-pack/verify.py vectors/public-v1 --tdhash $TD --taskhash $TH 
 # 3) Foundry: compile + full MUST-clause test suite
 curl -L https://foundry.paradigm.xyz | bash && source ~/.bashrc && foundryup
 forge install foundry-rs/forge-std --no-git
+forge install unicore-gpu/settlement-deductions@e36fa17 --no-git   # settlement-deductions branch only
 forge build
 forge test -vvv
 

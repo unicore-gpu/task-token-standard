@@ -5,7 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {TaskToken} from "../contracts/TaskToken.sol";
 import {ITaskTender} from "../contracts/interfaces/ITaskTender.sol";
 import {HashlockVerifier} from "../contracts/verifiers/HashlockVerifier.sol";
-import {DeductingTaskToken, SettlementDeductionPolicy, ITaxSchedule} from "../companions/DeductingTaskToken.sol";
+import {DeductingTaskToken} from "../companions/DeductingTaskToken.sol";
+import {SettlementDeductionPolicy} from "settlement-deductions/SettlementDeductionPolicy.sol";
+import {ITaxSchedule} from "settlement-deductions/interfaces/ITaxSchedule.sol";
 import {ISettlementDeductions} from "../contracts/interfaces/ISettlementDeductions.sol";
 
 contract USD {
@@ -41,14 +43,14 @@ contract PluggableTaskToken is TaskToken {
 }
 
 contract RevertingPolicy is ISettlementDeductions {
-    function onMint(uint256, address, uint256) external {}
+    function onTaskCreated(uint256, address, uint256) external {}
     function deductions(uint256, uint256, address, uint256) external pure returns (uint256) {
         revert("boom");
     }
 }
 
 contract GreedyPolicy is ISettlementDeductions {
-    function onMint(uint256, address, uint256) external {}
+    function onTaskCreated(uint256, address, uint256) external {}
     function deductions(uint256, uint256, address, uint256 reward) external pure returns (uint256) {
         return reward + 1; // more than the reward
     }
@@ -56,12 +58,12 @@ contract GreedyPolicy is ISettlementDeductions {
 
 /// Answers with no return data at all.
 contract MutePolicy {
-    function onMint(uint256, address, uint256) external {}
+    function onTaskCreated(uint256, address, uint256) external {}
     fallback() external {}
 }
 
 contract GasHogPolicy is ISettlementDeductions {
-    function onMint(uint256, address, uint256) external {}
+    function onTaskCreated(uint256, address, uint256) external {}
     function deductions(uint256, uint256, address, uint256) external pure returns (uint256) {
         while (true) {}
         return 0;
@@ -142,8 +144,8 @@ contract DeductingTaskTokenTest is Test {
     function test_design_example() public {
         uint256 id = _usdTask(t, judge, 100 * U, 1);
         vm.startPrank(worker);
-        p.assignReward(id, insurer, 200, 0);     // premium 2%
-        p.assignReward(id, lender, 0, 30 * U);   // repay 30
+        p.assignPayment(id, insurer, 200, 0);     // premium 2%
+        p.assignPayment(id, lender, 0, 30 * U);   // repay 30
         vm.stopPrank();
         uint256 sid = _submit(t, id);
 
@@ -188,7 +190,8 @@ contract DeductingTaskTokenTest is Test {
         assertEq(usd.balanceOf(worker), 99 * U);
 
         uint256 id2 = _usdTask(t, judge, 100 * U, 1); // a new tender sees the new rate
-        assertEq(p.taxOf(id2).bps, 900);
+        (, uint16 rate2) = p.lockedTaxOf(id2);
+        assertEq(rate2, 900);
     }
 
     function test_tax_above_cap_blocks_mint() public {
@@ -203,7 +206,7 @@ contract DeductingTaskTokenTest is Test {
         SettlementDeductionPolicy pc = _policyOf(c);
         uint256 id = _usdTask(c, judge, 100 * U, 2);
         vm.prank(worker);
-        pc.assignReward(id, lender, 0, 50 * U);
+        pc.assignPayment(id, lender, 0, 50 * U);
 
         uint256 s1 = _submit(c, id);
         vm.prank(judge);
@@ -263,7 +266,7 @@ contract DeductingTaskTokenTest is Test {
     function test_others_cannot_assign_fulfillers_reward() public {
         uint256 id = _usdTask(t, judge, 100 * U, 1);
         vm.prank(rando);
-        p.assignReward(id, lender, 0, 90 * U); // binds rando's rewards, not the worker's
+        p.assignPayment(id, lender, 0, 90 * U); // binds rando's rewards, not the worker's
         uint256 sid = _submit(t, id);
         vm.prank(judge);
         t.acceptFulfillment(id, sid);
@@ -275,18 +278,18 @@ contract DeductingTaskTokenTest is Test {
         uint256 id = _usdTask(t, judge, 100 * U, 1);
         vm.startPrank(worker);
         vm.expectRevert("Deductions: rate xor amount");
-        p.assignReward(id, lender, 0, 0);
+        p.assignPayment(id, lender, 0, 0);
         vm.expectRevert("Deductions: rate xor amount");
-        p.assignReward(id, lender, 100, 1);
+        p.assignPayment(id, lender, 100, 1);
         vm.expectRevert("Deductions: rate above cap");
-        p.assignReward(id, lender, 5001, 0);
+        p.assignPayment(id, lender, 5001, 0);
         vm.expectRevert("Deductions: bad recipient");
-        p.assignReward(id, address(0), 100, 0);
+        p.assignPayment(id, address(0), 100, 0);
         vm.expectRevert("Deductions: bad recipient");
-        p.assignReward(id, worker, 100, 0);
-        for (uint256 i = 0; i < 4; i++) p.assignReward(id, lender, 0, 1);
+        p.assignPayment(id, worker, 100, 0);
+        for (uint256 i = 0; i < 4; i++) p.assignPayment(id, lender, 0, 1);
         vm.expectRevert("Deductions: too many assignments");
-        p.assignReward(id, lender, 0, 1);
+        p.assignPayment(id, lender, 0, 1);
         vm.stopPrank();
     }
 
@@ -355,7 +358,7 @@ contract DeductingTaskTokenTest is Test {
     function test_starving_the_policy_reverts() public {
         uint256 id = _usdTask(t, judge, 100 * U, 1);
         vm.prank(worker);
-        p.assignReward(id, lender, 0, 30 * U);
+        p.assignPayment(id, lender, 0, 30 * U);
         uint256 sid = _submit(t, id);
         vm.warp(block.timestamp + 7 days + 1);
         // just enough gas for everything except the policy's full budget
@@ -368,11 +371,11 @@ contract DeductingTaskTokenTest is Test {
 
     // ------------------------------------------------ only the task token drives the policy
     function test_policy_hooks_only_from_task_token() public {
-        vm.expectRevert("Deductions: not task token");
-        p.onMint(1, address(usd), 1);
-        vm.expectRevert("Deductions: not task token");
+        vm.expectRevert("Deductions: not escrow");
+        p.onTaskCreated(1, address(usd), 1);
+        vm.expectRevert("Deductions: not escrow");
         p.deductions(1, 1, worker, 100);
-        vm.expectRevert("Deductions: nothing owed");
+        vm.expectRevert("TaskToken: nonexistent token"); // claim asks the escrow first
         p.claim(1, treasury);
     }
 
@@ -389,10 +392,10 @@ contract DeductingTaskTokenTest is Test {
     function test_max_assignments_fit_gas_budget() public {
         uint256 id = _usdTask(t, judge, 100 * U, 1);
         vm.startPrank(worker);
-        p.assignReward(id, insurer, 100, 0);
-        p.assignReward(id, address(0x1001), 100, 0);
-        p.assignReward(id, lender, 0, 10 * U);
-        p.assignReward(id, address(0x1002), 0, 10 * U);
+        p.assignPayment(id, insurer, 100, 0);
+        p.assignPayment(id, address(0x1001), 100, 0);
+        p.assignPayment(id, lender, 0, 10 * U);
+        p.assignPayment(id, address(0x1002), 0, 10 * U);
         vm.stopPrank();
         uint256 sid = _submit(t, id);
         vm.prank(judge);
@@ -403,7 +406,7 @@ contract DeductingTaskTokenTest is Test {
 
     // ------------------------------------------------ deployability: under the 24,576-byte limit
     function test_policy_is_bound_to_its_task_token() public view {
-        assertEq(p.taskToken(), address(t));
+        assertEq(p.escrow(), address(t));
     }
 
     function test_runtime_sizes_deployable() public view {

@@ -167,7 +167,7 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
         emit AcceptanceAuthorityChanged(tokenId, address(0), acceptanceAuthority_);
         address policy = _deductionPolicy();
         if (policy != address(0)) {
-            ISettlementDeductions(policy).onMint(tokenId, terms.asset, terms.rewardPerCompletion);
+            ISettlementDeductions(policy).onTaskCreated(tokenId, terms.asset, terms.rewardPerCompletion);
         }
     }
 
@@ -495,10 +495,14 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
         address policy = _deductionPolicy();
         if (policy == address(0)) return net;
         require(gasleft() > DEDUCTION_GAS * 64 / 63 + 10_000, "TaskToken: gas");
-        (bool ok, bytes memory ret) = policy.call{gas: DEDUCTION_GAS}(abi.encodeCall(
-            ISettlementDeductions.deductions, (tokenId, submissionId, fulfiller, reward)));
+        bytes memory data = abi.encodeCall(
+            ISettlementDeductions.deductions, (tokenId, submissionId, fulfiller, reward));
         uint256 d = type(uint256).max; // anything but one word reads as invalid
-        if (ok && ret.length == 32) assembly { d := mload(add(ret, 32)) }
+        assembly ("memory-safe") { // copy at most one word of return data
+            if call(DEDUCTION_GAS, policy, 0, add(data, 32), mload(data), 0, 32) {
+                if eq(returndatasize(), 32) { d := mload(0) }
+            }
+        }
         if (d > reward) {
             emit DeductionsSkipped(tokenId, submissionId);
         } else if (d > 0) {
