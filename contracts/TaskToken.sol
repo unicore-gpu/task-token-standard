@@ -6,6 +6,7 @@ import {ITaskTender} from "./interfaces/ITaskTender.sol";
 import {ITaskVerifier} from "./interfaces/ITaskVerifier.sol";
 import {IOnchainTaskDocument} from "./interfaces/IOnchainTaskDocument.sol";
 import {TaskVault} from "./TaskVault.sol";
+import {ISettlementDeductions} from "./interfaces/ISettlementDeductions.sol";
 
 interface IERC20Minimal {
     function transferFrom(address from, address to, uint256 amount) external returns (bool);
@@ -164,7 +165,31 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
         emit TaskUpdated(tokenId, tdHash, taskHash, 1);
         emit TaskUpdateAuthorityChanged(tokenId, address(0), updateAuthority_);
         emit AcceptanceAuthorityChanged(tokenId, address(0), acceptanceAuthority_);
+        address policy = _deductionPolicy();
+        if (policy != address(0)) {
+            ISettlementDeductions(policy).onMint(tokenId, terms.asset, terms.rewardPerCompletion);
+        }
     }
+
+    // =============================================================== settlement exit
+    /// Settlement deductions (optional). The kernel stays rule-free: a deployment that
+    /// needs settlement-time deductions (a tax, an insurance premium, a loan repayment)
+    /// names a deduction policy for its whole lifetime by overriding _deductionPolicy.
+    /// The policy decides the amount; the kernel alone moves the money.
+    ///
+    /// The deduction is CREDITED to the policy, never pushed: it joins the same
+    /// owed-money ledger as an undeliverable payout and leaves the vault only through
+    /// withdrawCredit. The payout path calls no recipient.
+    event SettlementDeducted(uint256 indexed tokenId, uint256 indexed submissionId,
+                             address indexed policy, uint256 amount);
+    /// The policy failed or answered invalidly; this settlement paid in full.
+    event DeductionsSkipped(uint256 indexed tokenId, uint256 indexed submissionId);
+
+    /// Gas the policy is guaranteed on every settlement. See _applyDeductions.
+    uint256 internal constant DEDUCTION_GAS = 300_000;
+
+    /// Default: no policy, and settlement is exactly the kernel's.
+    function _deductionPolicy() internal view virtual returns (address) {}
 
     // =============================================================== ITaskToken views
     function taskOf(uint256 tokenId) external view exists(tokenId) returns (TaskBinding memory) {
@@ -443,14 +468,44 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
             _attributedPool[tokenId] = pool; // write back the clamp; gifts covered it all
         }
         emit FulfillmentAccepted(tokenId, submissionId, s.fulfiller, reward);
-        if (!_vault[tokenId].tryPayout(t.asset, s.fulfiller, reward)) {
+        uint256 net = _applyDeductions(tokenId, submissionId, s.fulfiller, reward);
+        if (!_vault[tokenId].tryPayout(t.asset, s.fulfiller, net)) {
             // The recipient will not take it. The settlement still stands -- the work
             // was accepted and the money is spent -- and the amount waits in the vault
             // for its owner to pull. Reverting here would let an unreceivable fulfiller
             // wedge the submission forever and freeze every refund queued behind it.
-            _credit[tokenId][s.fulfiller] += reward;
-            _creditTotal[tokenId] += reward;
-            emit PayoutCredited(tokenId, submissionId, s.fulfiller, reward);
+            _credit[tokenId][s.fulfiller] += net;
+            _creditTotal[tokenId] += net;
+            emit PayoutCredited(tokenId, submissionId, s.fulfiller, net);
+        }
+    }
+
+    /// Ask the policy how much of the reward it takes, credit that to the policy, and
+    /// return what is left for the fulfiller. The policy divides its share among its
+    /// own recipients; the kernel only ever sees one amount, never more than the reward.
+    ///
+    /// Liveness: a policy that reverts, runs out of its budget, or answers anything but
+    /// one word no larger than the reward cannot stall the settlement — it pays in full
+    /// and says so (DeductionsSkipped). Starvation: the caller must leave the policy its
+    /// whole budget, so nobody can make the policy fail on purpose (63/64 rule) and
+    /// settle without its deductions.
+    function _applyDeductions(uint256 tokenId, uint256 submissionId,
+                              address fulfiller, uint256 reward) private returns (uint256 net) {
+        net = reward;
+        address policy = _deductionPolicy();
+        if (policy == address(0)) return net;
+        require(gasleft() > DEDUCTION_GAS * 64 / 63 + 10_000, "TaskToken: gas");
+        (bool ok, bytes memory ret) = policy.call{gas: DEDUCTION_GAS}(abi.encodeCall(
+            ISettlementDeductions.deductions, (tokenId, submissionId, fulfiller, reward)));
+        uint256 d = type(uint256).max; // anything but one word reads as invalid
+        if (ok && ret.length == 32) assembly { d := mload(add(ret, 32)) }
+        if (d > reward) {
+            emit DeductionsSkipped(tokenId, submissionId);
+        } else if (d > 0) {
+            _credit[tokenId][policy] += d;
+            _creditTotal[tokenId] += d;
+            emit SettlementDeducted(tokenId, submissionId, policy, d);
+            net = reward - d;
         }
     }
 
