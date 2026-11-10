@@ -140,19 +140,25 @@ contract DeductionConformanceTest is Test {
 
     // ------------------------------------------------ 5.4 no gas value skips the deductions
     function test_no_gas_value_settles_without_the_deductions() public {
-        uint256 id = _usdTask(100 * U, 1);
+        uint256 id = _usdTask(100 * U, 2);
         vm.prank(worker);
-        p.assignPayment(id, lender, 0, 30 * U);
+        p.assignPayment(id, lender, 0, 60 * U);
+        // A first settlement allocates what later ones only update, so that the sweep
+        // below measures the starvation check and not the kernel's own new storage.
+        uint256 s1 = _submit(t, id);
+        vm.prank(judge);
+        t.acceptFulfillment(id, s1);
+        assertEq(p.owedOf(id, lender), 49 * U); // cap 50%: tax 1, repayment 49
         uint256 sid = _submit(t, id);
         vm.warp(block.timestamp + 7 days + 1);
         uint256 lo = 100_000;
-        uint256 hi = 2_000_000;
+        uint256 hi = 3_000_000;
         assertTrue(_claimWith(id, sid, hi), "a large budget settles");
         while (lo + 1 < hi) {
             uint256 mid = (lo + hi) / 2;
             if (_claimWith(id, sid, mid)) hi = mid; else lo = mid;
         }
-        for (uint256 g = hi - 1_000; g <= hi + 1_000; g++) _claimWith(id, sid, g);
+        for (uint256 g = hi - 300; g <= hi + 300; g++) _claimWith(id, sid, g);
         // Just below the smallest budget that settles, the refusal is the kernel's own
         // starvation check, not an incidental out-of-gas.
         (bool ok, bytes memory ret) = address(t).call{gas: hi - 1}(abi.encodeCall(t.claimUnjudged, (id, sid)));
@@ -163,7 +169,7 @@ contract DeductionConformanceTest is Test {
     function _claimWith(uint256 id, uint256 sid, uint256 g) internal returns (bool ok) {
         uint256 snap = vm.snapshotState();
         (ok, ) = address(t).call{gas: g}(abi.encodeCall(t.claimUnjudged, (id, sid)));
-        if (ok) assertEq(p.owedOf(id, lender), 30 * U, "settled, so the lender must be in");
+        if (ok) assertEq(p.owedOf(id, lender), 60 * U, "settled, so the lender must be in");
         vm.revertToState(snap);
     }
 
@@ -235,6 +241,59 @@ contract DeductionConformanceTest is Test {
         assertEq(usd.balanceOf(lender), 30 * U);
         assertEq(usd.balanceOf(worker), 67 * U);
         assertEq(usd.balanceOf(address(p)), 0, "policy keeps nothing");
+    }
+
+    // ------------------------------------------------ 4 the escrow publishes its policy and G
+    function test_the_kernel_publishes_its_policy_and_gas() public {
+        assertEq(t.deductionPolicy(), address(p));
+        assertEq(t.deductionGas(), 300_000);
+        PluggableTaskToken none = new PluggableTaskToken(address(0));
+        assertEq(none.deductionPolicy(), address(0));
+    }
+
+    // ------------------------------------------------ 5.9 the payee is fixed before the payout
+    /// The kernel pays the address that submitted the work, whoever triggers the payout.
+    function test_the_payee_is_the_submitter_whoever_settles() public {
+        uint256 id = _usdTask(100 * U, 2);
+        vm.prank(worker);
+        p.assignPayment(id, lender, 0, 30 * U);
+        uint256 s1 = _submit(t, id);
+        vm.prank(judge);
+        t.acceptFulfillment(id, s1);
+        uint256 s2 = _submit(t, id);
+        vm.warp(block.timestamp + 7 days + 1);
+        vm.prank(rando); // a stranger settles the unjudged submission
+        t.claimUnjudged(id, s2);
+        assertEq(usd.balanceOf(rando), 0);
+        assertEq(usd.balanceOf(worker), 200 * U - 2 * U - 30 * U);
+        assertEq(p.owedOf(id, lender), 30 * U);
+    }
+
+    // ------------------------------------------------ 6.5 payouts create no storage in the policy
+    function test_payouts_create_no_storage_in_the_policy() public {
+        uint256 id = _usdTask(100 * U, 3);
+        vm.startPrank(worker);
+        p.assignPayment(id, referrer, 200, 0);
+        p.assignPayment(id, lender, 0, 30 * U);
+        vm.stopPrank();
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 sid = _submit(t, id);
+            vm.startStateDiffRecording();
+            vm.prank(judge);
+            t.acceptFulfillment(id, sid);
+            Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+            uint256 writes;
+            for (uint256 a = 0; a < accesses.length; a++) {
+                Vm.StorageAccess[] memory s = accesses[a].storageAccesses;
+                for (uint256 j = 0; j < s.length; j++) {
+                    if (s[j].account != address(p) || !s[j].isWrite || s[j].reverted) continue;
+                    writes++;
+                    assertTrue(s[j].previousValue != bytes32(0), "payout wrote a slot that was zero");
+                }
+            }
+            assertGt(writes, 0);
+            if (i == 0) p.claim(id, lender); // a claim keeps the slot allocated
+        }
     }
 
     // ------------------------------------------------ no money created or lost

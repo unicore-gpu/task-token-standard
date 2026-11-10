@@ -13,11 +13,11 @@ import {ITaxSchedule} from "settlement-deductions/interfaces/ITaxSchedule.sol";
 ///         through the kernel's existing creditOf / withdrawCredit.
 ///
 ///         Kept as thin as possible: the kernel sits near the 24,576-byte contract size
-///         limit. For the same reason there is no getter: the policy's address is announced
-///         once, at construction (DeductionPolicyDeployed), and the policy names this
-///         contract back (escrow()).
+///         limit. The policy's address is announced at construction
+///         (DeductionPolicyDeployed), readable through the kernel's deductionPolicy(), and
+///         the policy names this contract back (escrow()).
 contract DeductingTaskToken is TaskToken {
-    SettlementDeductionPolicy private immutable deductionPolicy;
+    SettlementDeductionPolicy private immutable _policy;
 
     event DeductionPolicyDeployed(address indexed policy);
 
@@ -25,11 +25,11 @@ contract DeductingTaskToken is TaskToken {
                 ITaxSchedule schedule, uint16 maxDeductionBps)
         TaskToken(name_, symbol_)
     {
-        deductionPolicy = new SettlementDeductionPolicy(address(this), schedule, maxDeductionBps);
-        emit DeductionPolicyDeployed(address(deductionPolicy));
+        _policy = new SettlementDeductionPolicy(address(this), schedule, maxDeductionBps);
+        emit DeductionPolicyDeployed(address(_policy));
     }
 
     function _deductionPolicy() internal view override returns (address) {
-        return address(deductionPolicy);
+        return address(_policy);
     }
 }

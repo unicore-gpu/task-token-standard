@@ -191,6 +191,12 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
     /// Default: no policy, and settlement is exactly the kernel's.
     function _deductionPolicy() internal view virtual returns (address) {}
 
+    /// The deduction policy named for life, or zero (settlement deductions ERC).
+    function deductionPolicy() external view returns (address) { return _deductionPolicy(); }
+
+    /// The fixed gas budget the policy is called with (settlement deductions ERC).
+    function deductionGas() external pure returns (uint256) { return DEDUCTION_GAS; }
+
     // =============================================================== ITaskToken views
     function taskOf(uint256 tokenId) external view exists(tokenId) returns (TaskBinding memory) {
         return _binding[tokenId];
@@ -494,6 +500,8 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
         net = reward;
         address policy = _deductionPolicy();
         if (policy == address(0)) return net;
+        // The 10,000 margin covers the call itself, including a cold access to the policy's
+        // account (2,600 gas; 3,000 under EIP-8038).
         require(gasleft() > DEDUCTION_GAS * 64 / 63 + 10_000, "TaskToken: gas");
         bytes memory data = abi.encodeCall(
             ISettlementDeductions.deductions, (tokenId, submissionId, fulfiller, reward));
