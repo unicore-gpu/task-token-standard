@@ -87,7 +87,7 @@ contract DeductingTaskTokenTest is Test {
     address funder   = address(0xF00D);
     address worker   = address(0xCAFE);
     address treasury = address(0x7EA5);
-    address insurer  = address(0x1A5);
+    address referrer = address(0x1A5);
     address lender   = address(0x10A1);
     address rando    = address(0xBAD);
 
@@ -134,7 +134,7 @@ contract DeductingTaskTokenTest is Test {
     }
 
     function _claimAll(SettlementDeductionPolicy pp, uint256 id) internal {
-        address[3] memory who = [treasury, insurer, lender];
+        address[3] memory who = [treasury, referrer, lender];
         for (uint256 i = 0; i < 3; i++) {
             if (pp.owedOf(id, who[i]) > 0) pp.claim(id, who[i]);
         }
@@ -144,7 +144,7 @@ contract DeductingTaskTokenTest is Test {
     function test_design_example() public {
         uint256 id = _usdTask(t, judge, 100 * U, 1);
         vm.startPrank(worker);
-        p.assignPayment(id, insurer, 200, 0);     // premium 2%
+        p.assignPayment(id, referrer, 200, 0);     // fee 2%
         p.assignPayment(id, lender, 0, 30 * U);   // repay 30
         vm.stopPrank();
         uint256 sid = _submit(t, id);
@@ -157,12 +157,12 @@ contract DeductingTaskTokenTest is Test {
         assertEq(usd.balanceOf(worker), 67 * U, "worker gets the remainder");
         assertEq(t.creditOf(id, address(p)), 33 * U, "one lump credited to the policy");
         assertEq(p.owedOf(id, treasury), 1 * U);
-        assertEq(p.owedOf(id, insurer), 2 * U);
+        assertEq(p.owedOf(id, referrer), 2 * U);
         assertEq(p.owedOf(id, lender), 30 * U);
 
         _claimAll(p, id);
         assertEq(usd.balanceOf(treasury), 1 * U);
-        assertEq(usd.balanceOf(insurer), 2 * U);
+        assertEq(usd.balanceOf(referrer), 2 * U);
         assertEq(usd.balanceOf(lender), 30 * U);
         assertEq(usd.balanceOf(t.vaultOf(id)), 0, "vault fully distributed");
         assertEq(usd.balanceOf(address(p)), 0, "policy keeps nothing");
@@ -392,7 +392,7 @@ contract DeductingTaskTokenTest is Test {
     function test_max_assignments_fit_gas_budget() public {
         uint256 id = _usdTask(t, judge, 100 * U, 1);
         vm.startPrank(worker);
-        p.assignPayment(id, insurer, 100, 0);
+        p.assignPayment(id, referrer, 100, 0);
         p.assignPayment(id, address(0x1001), 100, 0);
         p.assignPayment(id, lender, 0, 10 * U);
         p.assignPayment(id, address(0x1002), 0, 10 * U);

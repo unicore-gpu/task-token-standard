@@ -173,7 +173,7 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
 
     // =============================================================== settlement exit
     /// Settlement deductions (optional). The kernel stays rule-free: a deployment that
-    /// needs settlement-time deductions (a tax, an insurance premium, a loan repayment)
+    /// needs settlement-time deductions (a tax, a referral fee, a loan repayment)
     /// names a deduction policy for its whole lifetime by overriding _deductionPolicy.
     /// The policy decides the amount; the kernel alone moves the money.
     ///

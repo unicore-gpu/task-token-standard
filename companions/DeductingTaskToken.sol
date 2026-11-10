@@ -7,7 +7,7 @@ import {ITaxSchedule} from "settlement-deductions/interfaces/ITaxSchedule.sol";
 
 /// @title  DeductingTaskToken — an ERC-8414 task contract with a settlement deduction
 ///         policy (EXPERIMENTAL companion).
-/// @notice Deploys the reference SettlementDeductionPolicy (tax, premiums, repayments —
+/// @notice Deploys the reference SettlementDeductionPolicy (tax, referral fees, repayments —
 ///         see the settlement-deductions repository) and names it for life. Everything else
 ///         is the unchanged kernel; the kernel credits the policy and the policy withdraws
 ///         through the kernel's existing creditOf / withdrawCredit.

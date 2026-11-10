@@ -55,7 +55,7 @@ contract DeductionConformanceTest is Test {
     address funder   = address(0xF00D);
     address worker   = address(0xCAFE);
     address treasury = address(0x7EA5);
-    address insurer  = address(0x1A5);
+    address referrer = address(0x1A5);
     address lender   = address(0x10A1);
     address rando    = address(0xBAD);
 
@@ -217,7 +217,7 @@ contract DeductionConformanceTest is Test {
     function test_a_stranger_withdrawing_the_policys_credit_changes_nothing() public {
         uint256 id = _usdTask(100 * U, 1);
         vm.startPrank(worker);
-        p.assignPayment(id, insurer, 200, 0);
+        p.assignPayment(id, referrer, 200, 0);
         p.assignPayment(id, lender, 0, 30 * U);
         vm.stopPrank();
         uint256 sid = _submit(t, id);
@@ -228,10 +228,10 @@ contract DeductionConformanceTest is Test {
         assertEq(usd.balanceOf(rando), 0);
         assertEq(t.creditOf(id, address(p)), 0);
         p.claim(id, treasury);
-        p.claim(id, insurer);
+        p.claim(id, referrer);
         p.claim(id, lender);
         assertEq(usd.balanceOf(treasury), 1 * U);
-        assertEq(usd.balanceOf(insurer), 2 * U);
+        assertEq(usd.balanceOf(referrer), 2 * U);
         assertEq(usd.balanceOf(lender), 30 * U);
         assertEq(usd.balanceOf(worker), 67 * U);
         assertEq(usd.balanceOf(address(p)), 0, "policy keeps nothing");

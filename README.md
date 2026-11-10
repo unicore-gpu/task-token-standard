@@ -153,8 +153,8 @@ Interface IDs (compiler-verified, solc 0.8.24):
 
 This branch adds the escrow side of the draft
 [Settlement Deductions ERC](https://github.com/unicore-gpu/settlement-deductions) to the
-kernel, so that a deployment can withhold part of each payout for a tax, an insurance
-premium or a loan repayment. With no policy, settlement is unchanged.
+kernel, so that a deployment can withhold part of each payout for a tax, a referral fee
+or a loan repayment. With no policy, settlement is unchanged.
 
 - `contracts/TaskToken.sol`: `_deductionPolicy()` (default: none), `onTaskCreated` at mint,
   and `_applyDeductions` on every payout path: a fixed gas budget the caller cannot starve,
@@ -190,7 +190,7 @@ python3 tools/task-pack/verify.py vectors/public-v1 --tdhash $TD --taskhash $TH 
 # 3) Foundry: compile + full MUST-clause test suite
 curl -L https://foundry.paradigm.xyz | bash && source ~/.bashrc && foundryup
 forge install foundry-rs/forge-std --no-git
-forge install unicore-gpu/settlement-deductions@e36fa17 --no-git   # settlement-deductions branch only
+forge install unicore-gpu/settlement-deductions@eb8a7c1 --no-git   # settlement-deductions branch only
 forge build
 forge test -vvv
 
