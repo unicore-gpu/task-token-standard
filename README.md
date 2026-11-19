@@ -174,7 +174,7 @@ or a loan repayment. With no policy, settlement is unchanged.
   the payee fixed at submission, no storage created in the policy at payout, the
   policy and its gas budget readable on chain).
 - Size on this branch: `TaskToken` 23,864 bytes of runtime code (98 more than the
-  figure below), `DeductingTaskToken` 24,558, both under the 24,576-byte limit.
+  figure below), `DeductingTaskToken` 24,532, both under the 24,576-byte limit.
 
 ## Quick start
 
