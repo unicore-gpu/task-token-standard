@@ -34,8 +34,8 @@ interface ISettlementDeductions {
 ///         Only deductions add to the policy's credit, so the events account for every
 ///         unit deducted, from the payout to its withdrawal.
 interface ISettlementCredit {
-    /// Emitted on every payout: `deducted` of `amount` is credited to the policy, and the
-    /// payee is paid the rest. `deducted` is zero when nothing was taken or the answer was
+    /// Emitted on every payout of an escrow with a policy: `deducted` of `amount` is
+    /// credited to the policy, and the payee is paid the rest. `deducted` is zero when nothing was taken or the answer was
     /// invalid.
     event PayoutSettled(uint256 indexed taskId, uint256 indexed settlementId,
                         address indexed payee, uint256 amount, uint256 deducted);
