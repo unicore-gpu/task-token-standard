@@ -180,8 +180,13 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
     /// The deduction is CREDITED to the policy, never pushed: it joins the same
     /// owed-money ledger as an undeliverable payout and leaves the vault only through
     /// withdrawCredit. The payout path calls no recipient.
-    event SettlementDeducted(uint256 indexed tokenId, uint256 indexed submissionId,
-                             address indexed policy, uint256 amount);
+    ///
+    /// Every settlement with a policy logs PayoutSettled, with the fulfiller, the reward
+    /// and the deduction (zero included), so a reader can account for every unit from
+    /// logs alone, together with PayoutCredited and PayoutWithdrawn, which have the
+    /// signatures that ERC uses.
+    event PayoutSettled(uint256 indexed tokenId, uint256 indexed submissionId,
+                        address indexed fulfiller, uint256 reward, uint256 deducted);
     /// The policy failed or answered invalidly; this settlement paid in full.
     event DeductionsSkipped(uint256 indexed tokenId, uint256 indexed submissionId);
 
@@ -503,22 +508,30 @@ contract TaskToken is ITaskToken, ITaskTender, IOnchainTaskDocument {
         // The 10,000 margin covers the call itself, including a cold access to the policy's
         // account (2,600 gas; 3,000 under EIP-8038).
         require(gasleft() > DEDUCTION_GAS * 64 / 63 + 10_000, "TaskToken: gas");
-        bytes memory data = abi.encodeCall(
-            ISettlementDeductions.deductions, (tokenId, submissionId, fulfiller, reward));
+        bytes4 selector = ISettlementDeductions.deductions.selector;
         uint256 d = type(uint256).max; // anything but one word reads as invalid
-        assembly ("memory-safe") { // copy at most one word of return data
-            if call(DEDUCTION_GAS, policy, 0, add(data, 32), mload(data), 0, 32) {
+        assembly ("memory-safe") {
+            // deductions(tokenId, submissionId, fulfiller, reward), encoded in free memory
+            let m := mload(0x40)
+            mstore(m, selector)
+            mstore(add(m, 4), tokenId)
+            mstore(add(m, 36), submissionId)
+            mstore(add(m, 68), fulfiller)
+            mstore(add(m, 100), reward)
+            // copy at most one word of return data
+            if call(DEDUCTION_GAS, policy, 0, m, 132, 0, 32) {
                 if eq(returndatasize(), 32) { d := mload(0) }
             }
         }
         if (d > reward) {
             emit DeductionsSkipped(tokenId, submissionId);
+            d = 0;
         } else if (d > 0) {
             _credit[tokenId][policy] += d;
             _creditTotal[tokenId] += d;
-            emit SettlementDeducted(tokenId, submissionId, policy, d);
-            net = reward - d;
         }
+        emit PayoutSettled(tokenId, submissionId, fulfiller, reward, d);
+        net = reward - d;
     }
 
     /// The attributed pool can never exceed the vault's live balance (guards

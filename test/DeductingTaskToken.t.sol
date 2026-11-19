@@ -71,8 +71,8 @@ contract GasHogPolicy is ISettlementDeductions {
 }
 
 contract DeductingTaskTokenTest is Test {
-    event SettlementDeducted(uint256 indexed tokenId, uint256 indexed submissionId,
-                             address indexed policy, uint256 amount);
+    event PayoutSettled(uint256 indexed tokenId, uint256 indexed submissionId,
+                        address indexed fulfiller, uint256 reward, uint256 deducted);
     event DeductionsSkipped(uint256 indexed tokenId, uint256 indexed submissionId);
 
     DeductingTaskToken t;
@@ -150,7 +150,7 @@ contract DeductingTaskTokenTest is Test {
         uint256 sid = _submit(t, id);
 
         vm.expectEmit(true, true, true, true, address(t));
-        emit SettlementDeducted(id, sid, address(p), 33 * U);
+        emit PayoutSettled(id, sid, worker, 100 * U, 33 * U);
         vm.prank(judge);
         t.acceptFulfillment(id, sid);
 
@@ -381,7 +381,7 @@ contract DeductingTaskTokenTest is Test {
 
     function test_mute_policy_pays_in_full() public {
         (PluggableTaskToken k, uint256 id, uint256 sid) = _plugged(address(new MutePolicy()));
-        vm.expectEmit(true, true, false, false, address(k));
+        vm.expectEmit(address(k));
         emit DeductionsSkipped(id, sid);
         vm.prank(judge);
         k.acceptFulfillment(id, sid);
