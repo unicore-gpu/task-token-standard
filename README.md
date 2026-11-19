@@ -159,19 +159,22 @@ or a loan repayment. With no policy, settlement is unchanged.
 - `contracts/TaskToken.sol`: `_deductionPolicy()` (default: none), `onTaskCreated` at mint,
   and `_applyDeductions` on every payout path: a fixed gas budget the caller cannot starve,
   at most one word of return data, full payout and `DeductionsSkipped` on any invalid
-  answer, the deduction credited to the policy and withdrawn through `withdrawCredit`;
+  answer, the deduction credited to the policy and withdrawn through `withdrawCredit`,
+  and every settlement logged (`PayoutSettled`) with its fulfiller, reward and deduction,
+  zero included;
   `deductionPolicy()` and `deductionGas()` publish the policy and its gas budget.
 - `contracts/interfaces/ISettlementDeductions.sol`: a copy of the ERC's interfaces.
 - `companions/DeductingTaskToken.sol`: deploys the reference policy from the
   settlement-deductions repository and names it for life.
 - `test/DeductingTaskToken.t.sol`: 21 tests, including a contract-size check;
-  `test/DeductionConformance.t.sol`: 11 tests of the kernel against the ERC's escrow
+  `test/DeductionConformance.t.sol`: 12 tests of the kernel against the ERC's escrow
   requirements (every payout path asks the policy, no refund or rejection path does,
-  no gas limit settles without the deductions, the ERC's events, withdrawal by anyone,
+  no gas limit settles without the deductions, the ERC's events (a zero deduction
+  included), withdrawal by anyone,
   the payee fixed at submission, no storage created in the policy at payout, the
   policy and its gas budget readable on chain).
 - Size on this branch: `TaskToken` 23,864 bytes of runtime code (98 more than the
-  figure below), `DeductingTaskToken` 24,567, both under the 24,576-byte limit.
+  figure below), `DeductingTaskToken` 24,558, both under the 24,576-byte limit.
 
 ## Quick start
 

@@ -179,6 +179,8 @@ contract DeductionConformanceTest is Test {
         uint256 sid = _submit(k, id);
         vm.expectEmit(address(k));
         emit ISettlementCredit.DeductionsSkipped(id, sid);
+        vm.expectEmit(address(k));
+        emit ISettlementCredit.PayoutSettled(id, sid, worker, 1 ether, 0);
         vm.prank(judge);
         k.acceptFulfillment(id, sid);
         assertEq(worker.balance, 1 ether);
@@ -214,9 +216,26 @@ contract DeductionConformanceTest is Test {
         uint256 id = _usdTask(100 * U, 1);
         uint256 sid = _submit(t, id);
         vm.expectEmit(address(t));
-        emit ISettlementCredit.SettlementDeducted(id, sid, address(p), 1 * U);
+        emit ISettlementCredit.PayoutSettled(id, sid, worker, 100 * U, 1 * U);
         vm.prank(judge);
         t.acceptFulfillment(id, sid);
+        // The kernel's own credit events are the ERC's: same signatures, same topics.
+        assertEq(ISettlementCredit.PayoutCredited.selector, ITaskTender.PayoutCredited.selector);
+        assertEq(ISettlementCredit.PayoutWithdrawn.selector, ITaskTender.PayoutWithdrawn.selector);
+        vm.expectEmit(address(t));
+        emit ISettlementCredit.PayoutWithdrawn(id, address(p), 1 * U);
+        t.withdrawCredit(id, address(p));
+    }
+
+    /// 5.6: a zero deduction is logged too, so every settlement shows up in the ERC's events.
+    function test_a_zero_deduction_is_logged() public {
+        uint256 id = _usdTask(99, 1); // 1% of 99 rounds to 0
+        uint256 sid = _submit(t, id);
+        vm.expectEmit(address(t));
+        emit ISettlementCredit.PayoutSettled(id, sid, worker, 99, 0);
+        vm.prank(judge);
+        t.acceptFulfillment(id, sid);
+        assertEq(t.creditOf(id, address(p)), 0);
     }
 
     // ------------------------------------------------ 5.7 withdrawal by anyone, then claims
