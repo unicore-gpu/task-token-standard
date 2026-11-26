@@ -172,7 +172,10 @@ or a loan repayment. With no policy, settlement is unchanged.
   no gas limit settles without the deductions, the ERC's events (a zero deduction
   included), withdrawal by anyone,
   the payee fixed at submission, no storage created in the policy at payout, the
-  policy and its gas budget readable on chain).
+  policy and its gas budget readable on chain);
+  `test/DeductionPairing.t.sol`: 2 tests that a reader of the ERC finds each task's vault
+  with `vaultOf` and pairs every `PayoutSettled` and `PayoutWithdrawn` with the transfer
+  from that vault, several payouts to one payee in one transaction included.
 - Size on this branch: `TaskToken` 23,864 bytes of runtime code (98 more than the
   figure below), `DeductingTaskToken` 24,532, both under the 24,576-byte limit.
 
